@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Gemini Live English Tutor (Vanilla JS)</title>
+<style>
+  body { font-family: sans-serif; max-width: 600px; margin: auto; padding: 1em; }
+  .log { border: 1px solid #ccc; padding: .5em; height: 200px; overflow-y: auto; }
+  .user { background: #e6f0ff; margin: .25em 0; padding: .25em; border-radius: .25em; }
+  .bot { background: #e6ffe6; margin: .25em 0; padding: .25em; border-radius: .25em; }
+</style>
+</head>
+<body>
+
+<h2>Gemini Live English Tutor (Indonesian learner)</h2>
+
+<label>Gemini API Key: <input type="password" id="apiKey"></label>
+<button id="connectBtn">Connect</button>
+<button id="disconnectBtn" disabled>Disconnect</button>
+
+<div>Status: <span id="status">Idle</span></div>
+
+<h3>Transcripts</h3>
+<div>You: <span id="transcriptIn">…</span></div>
+<div>Tutor: <span id="transcriptOut">…</span></div>
+
+<h3>Chat Log</h3>
+<div class="log" id="log"></div>
+
+<input id="textInput" placeholder="Type here..." style="width: 80%">
+<button id="sendBtn">Send</button>
+
+<script>
+let ws, audioCtx, playerNode, sourceNode;
+let recorderProcessor, stream, connected = false;
+
+function logMsg(role, text) {
+  const log = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = role;
+  div.textContent = (role === 'user' ? 'You: ' : 'Tutor: ') + text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function floatTo16BitPCM(float32Array) {
+  const buffer = new ArrayBuffer(float32Array.length * 2);
+  const view = new DataView(buffer);
+  let offset = 0;
+  for (let i = 0; i < float32Array.length; i++, offset += 2) {
+    let s = Math.max(-1, Math.min(1, float32Array[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return buffer;
+}
+
+function resampleLinear(input, fromRate, toRate) {
+  if (fromRate === toRate) return input;
+  const ratio = toRate / fromRate;
+  const outLength = Math.floor(input.length * ratio);
+  const out = new Float32Array(outLength);
+  for (let i = 0; i < outLength; i++) {
+    const srcPos = i / ratio;
+    const i0 = Math.floor(srcPos);
+    const i1 = Math.min(i0 + 1, input.length - 1);
+    const t = srcPos - i0;
+    out[i] = input[i0] * (1 - t) + input[i1] * t;
+  }
+  return out;
+}
+
+async function startMic() {
+  stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  audioCtx = new AudioContext({ sampleRate: 48000 });
+  const source = audioCtx.createMediaStreamSource(stream);
+  recorderProcessor = audioCtx.createScriptProcessor(4096, 1, 1);
+  source.connect(recorderProcessor);
+  recorderProcessor.connect(audioCtx.destination);
+  recorderProcessor.onaudioprocess = e => {
+    if (!ws || ws.readyState !== 1) return;
+    const floatData = e.inputBuffer.getChannelData(0);
+    const resampled = resampleLinear(floatData, 48000, 16000);
+    const pcm16 = floatTo16BitPCM(resampled);
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm16)));
+    ws.send(JSON.stringify({
+      realtimeInput: {
+        audio: { data: b64, mimeType: "audio/pcm;rate=16000" }
+      }
+    }));
+  };
+}
+
+function playPCM16(int16Array) {
+  if (!audioCtx) audioCtx = new AudioContext();
+  const float32 = new Float32Array(int16Array.length);
+  for (let i = 0; i < int16Array.length; i++)
+    float32[i] = Math.max(-1, Math.min(1, int16Array[i] / 32768));
+  const buffer = audioCtx.createBuffer(1, float32.length, audioCtx.sampleRate);
+  buffer.copyToChannel(float32, 0);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(audioCtx.destination);
+  src.start();
+}
+
+document.getElementById('connectBtn').onclick = async () => {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey) return alert('Paste API key first');
+
+  // WebSocket endpoint for Gemini Live
+  ws = new WebSocket(`wss://generativelanguage.googleapis.com/v1alpha/live:connect?key=${apiKey}`);
+  ws.onopen = () => {
+    document.getElementById('status').textContent = 'Connected';
+    connected = true;
+    document.getElementById('connectBtn').disabled = true;
+    document.getElementById('disconnectBtn').disabled = false;
+
+    // Initial config
+    ws.send(JSON.stringify({
+      setup: {
+        model: "models/gemini-live-2.5-flash-preview",
+        config: {
+          systemInstruction: {
+            parts: [{ text: "You are an English tutor for Indonesian learners. Speak in English first, then give short Indonesian explanations if needed." }]
+          },
+          responseModalities: ["AUDIO", "TEXT"]
+        }
+      }
+    }));
+    startMic();
+  };
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    // Play audio if present
+    if (msg.data) {
+      const raw = Uint8Array.from(atob(msg.data), c => c.charCodeAt(0)).buffer;
+      playPCM16(new Int16Array(raw));
+    }
+    // Show transcriptions
+    if (msg.serverContent?.inputTranscription?.transcribedText) {
+      document.getElementById('transcriptIn').textContent =
+        msg.serverContent.inputTranscription.transcribedText;
+    }
+    if (msg.serverContent?.outputTranscription?.transcribedText) {
+      document.getElementById('transcriptOut').textContent =
+        msg.serverContent.outputTranscription.transcribedText;
+    }
+    // Chat turns
+    if (msg.serverContent?.modelTurn?.parts) {
+      const txt = msg.serverContent.modelTurn.parts.map(p => p.text).join(' ');
+      if (txt) logMsg('bot', txt);
+    }
+  };
+  ws.onclose = () => {
+    document.getElementById('status').textContent = 'Disconnected';
+    connected = false;
+    document.getElementById('connectBtn').disabled = false;
+    document.getElementById('disconnectBtn').disabled = true;
+  };
+};
+
+document.getElementById('disconnectBtn').onclick = () => {
+  if (ws) ws.close();
+  if (recorderProcessor) recorderProcessor.disconnect();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+};
+
+document.getElementById('sendBtn').onclick = () => {
+  const text = document.getElementById('textInput').value.trim();
+  if (!text || !ws) return;
+  logMsg('user', text);
+  ws.send(JSON.stringify({
+    clientContent: { turns: [{ role: 'user', parts: [{ text }] }] },
+    turnComplete: true
+  }));
+  document.getElementById('textInput').value = '';
+};
+</script>
+</body>
+</html>
