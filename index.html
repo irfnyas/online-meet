@@ -1,180 +1,556 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Gemini Live English Tutor (Vanilla JS)</title>
-<style>
-  body { font-family: sans-serif; max-width: 600px; margin: auto; padding: 1em; }
-  .log { border: 1px solid #ccc; padding: .5em; height: 200px; overflow-y: auto; }
-  .user { background: #e6f0ff; margin: .25em 0; padding: .25em; border-radius: .25em; }
-  .bot { background: #e6ffe6; margin: .25em 0; padding: .25em; border-radius: .25em; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini AI English Tutor</title>
+    <style>
+        /* --- General Layout and Theming --- */
+        :root {
+            --primary-bg: #121212;
+            --secondary-bg: #1e1e1e;
+            --tertiary-bg: #2a2a2a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --accent-color: #8a2be2; /* BlueViolet */
+            --accent-glow: rgba(138, 43, 226, 0.5);
+            --error-color: #cf6679;
+            --user-bubble-bg: #373737;
+            --ai-bubble-bg: var(--accent-color);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--primary-bg);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+       .container {
+            width: 100%;
+            max-width: 700px;
+            display: flex;
+            flex-direction: column;
+            height: 95vh;
+            background-color: var(--secondary-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+            overflow: hidden;
+        }
+
+        /* --- API Key Input Section --- */
+        #api-key-section {
+            padding: 2rem;
+            text-align: center;
+            border-bottom: 1px solid var(--tertiary-bg);
+        }
+
+        #api-key-section h2 {
+            margin-top: 0;
+            color: var(--text-primary);
+        }
+
+        #api-key-input {
+            width: 80%;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            border-radius: 6px;
+            border: 1px solid var(--tertiary-bg);
+            background-color: var(--primary-bg);
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        #save-api-key-button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            background-color: var(--accent-color);
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        #save-api-key-button:hover {
+            background-color: #7a1fce;
+        }
+
+        /* --- Main Application Section --- */
+        #app-section {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            padding: 1rem;
+            justify-content: flex-end;
+        }
+
+        /* --- Conversation Log --- */
+        #conversation-log {
+            flex-grow: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding-bottom: 1rem;
+        }
+
+       .chat-bubble {
+            max-width: 75%;
+            padding: 0.75rem 1rem;
+            border-radius: 18px;
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+
+       .user-bubble {
+            background-color: var(--user-bubble-bg);
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+       .ai-bubble {
+            background-color: var(--ai-bubble-bg);
+            color: white;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        /* --- Controls and Status --- */
+       .controls {
+            text-align: center;
+            padding-top: 1rem;
+        }
+
+        #status-display {
+            color: var(--text-secondary);
+            height: 20px;
+            margin-bottom: 1rem;
+            transition: color 0.3s;
+        }
+
+        body.state-error #status-display {
+            color: var(--error-color);
+        }
+
+        #mic-button {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: none;
+            background-color: var(--accent-color);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 0 0 var(--accent-glow);
+        }
+
+        #mic-button:disabled {
+            background-color: var(--tertiary-bg);
+            cursor: not-allowed;
+        }
+
+        #mic-button svg {
+            width: 32px;
+            height: 32px;
+        }
+
+        /* --- State Animations --- */
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 var(--accent-glow);
+            }
+            70% {
+                box-shadow: 0 0 0 20px rgba(138, 43, 226, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(138, 43, 226, 0);
+            }
+        }
+
+        body.state-listening #mic-button {
+            animation: pulse 2s infinite;
+        }
+    </style>
 </head>
 <body>
 
-<h2>Gemini Live English Tutor (Indonesian learner)</h2>
+    <div class="container">
+        <div id="api-key-section">
+            <h2>Enter Gemini API Key</h2>
+            <p style="color: var(--text-secondary); font-size: 0.9rem;">Your API key is stored only in your browser's local storage and is never sent anywhere except to Google's API.</p>
+            <input type="password" id="api-key-input" placeholder="Enter your API key here">
+            <button id="save-api-key-button">Save and Start</button>
+        </div>
 
-<label>Gemini API Key: <input type="password" id="apiKey"></label>
-<button id="connectBtn">Connect</button>
-<button id="disconnectBtn" disabled>Disconnect</button>
+        <div id="app-section" style="display: none;">
+            <div id="conversation-log"></div>
+            <div class="controls">
+                <p id="status-display">Ready to start</p>
+                <button id="mic-button" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 14a2 2 0 0 1-2-2V6a2 2 0 1 1 4 0v6a2 2 0 0 1-2 2zm6-2a6 6 0 1 1-12 0V6a6 6 0 0 1 12 0v6zM4 12H2a8 8 0 0 0 14.94 4.94l-1.42-1.42A6 6 0 0 1 4 12z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
 
-<div>Status: <span id="status">Idle</span></div>
+    <script type="module">
+        // --- MODULE 1: IMPORTS, CONSTANTS, AND STATE ---
 
-<h3>Transcripts</h3>
-<div>You: <span id="transcriptIn">…</span></div>
-<div>Tutor: <span id="transcriptOut">…</span></div>
+        import { GoogleGenerativeAI } from "https://cdn.jsdelivr.net/npm/@google/genai/dist/index.min.js";
 
-<h3>Chat Log</h3>
-<div class="log" id="log"></div>
+        // --- Constants ---
+        const MODEL_NAME = "gemini-2.5-flash-preview-native-audio-dialog";
+        const TARGET_SAMPLE_RATE = 16000; // Required by the Gemini API
 
-<input id="textInput" placeholder="Type here..." style="width: 80%">
-<button id="sendBtn">Send</button>
+        // --- DOM Element References ---
+        const apiKeySection = document.getElementById('api-key-section');
+        const appSection = document.getElementById('app-section');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const saveApiKeyButton = document.getElementById('save-api-key-button');
+        const micButton = document.getElementById('mic-button');
+        const statusDisplay = document.getElementById('status-display');
+        const conversationLog = document.getElementById('conversation-log');
+        
+        // --- Application State ---
+        let apiKey = '';
+        let genAI;
+        let geminiSession;
+        let audioContext;
+        let audioWorkletNode;
+        let mediaStream;
+        let isListening = false;
+        let isProcessing = false;
+        let audioQueue =;
+        let isPlaying = false;
 
-<script>
-let ws, audioCtx, playerNode, sourceNode;
-let recorderProcessor, stream, connected = false;
+        // --- System Prompt ---
+        const SYSTEM_INSTRUCTION = {
+            parts:
+        };
 
-function logMsg(role, text) {
-  const log = document.getElementById('log');
-  const div = document.createElement('div');
-  div.className = role;
-  div.textContent = (role === 'user' ? 'You: ' : 'Tutor: ') + text;
-  log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
-}
+        // --- MODULE 2: INITIALIZATION AND UI SETUP ---
 
-function floatTo16BitPCM(float32Array) {
-  const buffer = new ArrayBuffer(float32Array.length * 2);
-  const view = new DataView(buffer);
-  let offset = 0;
-  for (let i = 0; i < float32Array.length; i++, offset += 2) {
-    let s = Math.max(-1, Math.min(1, float32Array[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return buffer;
-}
+        function init() {
+            // Check for a saved API key in localStorage
+            const savedApiKey = localStorage.getItem('geminiApiKey');
+            if (savedApiKey) {
+                apiKey = savedApiKey;
+                setupApp();
+            }
 
-function resampleLinear(input, fromRate, toRate) {
-  if (fromRate === toRate) return input;
-  const ratio = toRate / fromRate;
-  const outLength = Math.floor(input.length * ratio);
-  const out = new Float32Array(outLength);
-  for (let i = 0; i < outLength; i++) {
-    const srcPos = i / ratio;
-    const i0 = Math.floor(srcPos);
-    const i1 = Math.min(i0 + 1, input.length - 1);
-    const t = srcPos - i0;
-    out[i] = input[i0] * (1 - t) + input[i1] * t;
-  }
-  return out;
-}
+            saveApiKeyButton.addEventListener('click', () => {
+                const key = apiKeyInput.value.trim();
+                if (key) {
+                    apiKey = key;
+                    localStorage.setItem('geminiApiKey', key);
+                    setupApp();
+                } else {
+                    alert('Please enter a valid API key.');
+                }
+            });
 
-async function startMic() {
-  stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  audioCtx = new AudioContext({ sampleRate: 48000 });
-  const source = audioCtx.createMediaStreamSource(stream);
-  recorderProcessor = audioCtx.createScriptProcessor(4096, 1, 1);
-  source.connect(recorderProcessor);
-  recorderProcessor.connect(audioCtx.destination);
-  recorderProcessor.onaudioprocess = e => {
-    if (!ws || ws.readyState !== 1) return;
-    const floatData = e.inputBuffer.getChannelData(0);
-    const resampled = resampleLinear(floatData, 48000, 16000);
-    const pcm16 = floatTo16BitPCM(resampled);
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm16)));
-    ws.send(JSON.stringify({
-      realtimeInput: {
-        audio: { data: b64, mimeType: "audio/pcm;rate=16000" }
-      }
-    }));
-  };
-}
+            micButton.addEventListener('click', handleMicButtonClick);
+        }
 
-function playPCM16(int16Array) {
-  if (!audioCtx) audioCtx = new AudioContext();
-  const float32 = new Float32Array(int16Array.length);
-  for (let i = 0; i < int16Array.length; i++)
-    float32[i] = Math.max(-1, Math.min(1, int16Array[i] / 32768));
-  const buffer = audioCtx.createBuffer(1, float32.length, audioCtx.sampleRate);
-  buffer.copyToChannel(float32, 0);
-  const src = audioCtx.createBufferSource();
-  src.buffer = buffer;
-  src.connect(audioCtx.destination);
-  src.start();
-}
+        function setupApp() {
+            apiKeySection.style.display = 'none';
+            appSection.style.display = 'flex';
+            micButton.disabled = false;
+            try {
+                genAI = new GoogleGenerativeAI(apiKey);
+            } catch (error) {
+                console.error("Failed to initialize GoogleGenerativeAI:", error);
+                updateStatus("Error: Invalid API Key format.", true);
+                apiKeySection.style.display = 'block';
+                appSection.style.display = 'none';
+            }
+        }
 
-document.getElementById('connectBtn').onclick = async () => {
-  const apiKey = document.getElementById('apiKey').value.trim();
-  if (!apiKey) return alert('Paste API key first');
+        function updateStatus(message, isError = false) {
+            statusDisplay.textContent = message;
+            document.body.classList.toggle('state-error', isError);
+        }
 
-  // WebSocket endpoint for Gemini Live
-  ws = new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(apiKey)}`);
-  ws.onopen = () => {
-    document.getElementById('status').textContent = 'Connected';
-    connected = true;
-    document.getElementById('connectBtn').disabled = true;
-    document.getElementById('disconnectBtn').disabled = false;
+        function addChatBubble(text, sender) {
+            const bubble = document.createElement('div');
+            bubble.classList.add('chat-bubble', `${sender}-bubble`);
+            bubble.textContent = text;
+            conversationLog.appendChild(bubble);
+            conversationLog.scrollTop = conversationLog.scrollHeight;
+        }
 
-    // Initial config
-    ws.send(JSON.stringify({
-      setup: {
-        model: "models/gemini-live-2.5-flash-preview",
-        generationConfig: { responseModalities: ["AUDIO","TEXT"] },
-        systemInstruction: { parts: [{ text:
-          "You are an English tutor for Indonesian learners. Reply in English first, then brief Indonesian help." }] },
-        // Optional but useful if you want transcripts from the server:
-        inputAudioTranscription: {},
-        outputAudioTranscription: {}
-      }
-    }));
-    startMic(); // your function that streams 16 kHz PCM16 chunks via realtimeInput
-  };
-  ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    // Play audio if present
-    if (msg.data) {
-      const raw = Uint8Array.from(atob(msg.data), c => c.charCodeAt(0)).buffer;
-      playPCM16(new Int16Array(raw));
-    }
-    // Show transcriptions
-    if (msg.serverContent?.inputTranscription?.transcribedText) {
-      document.getElementById('transcriptIn').textContent =
-        msg.serverContent.inputTranscription.transcribedText;
-    }
-    if (msg.serverContent?.outputTranscription?.transcribedText) {
-      document.getElementById('transcriptOut').textContent =
-        msg.serverContent.outputTranscription.transcribedText;
-    }
-    // Chat turns
-    if (msg.serverContent?.modelTurn?.parts) {
-      const txt = msg.serverContent.modelTurn.parts.map(p => p.text).join(' ');
-      if (txt) logMsg('bot', txt);
-    }
-  };
-  ws.onclose = () => {
-    document.getElementById('status').textContent = 'Disconnected';
-    connected = false;
-    document.getElementById('connectBtn').disabled = false;
-    document.getElementById('disconnectBtn').disabled = true;
-  };
-};
+        // --- MODULE 3: MICROPHONE CAPTURE AND AUDIO PROCESSING ---
 
-document.getElementById('disconnectBtn').onclick = () => {
-  if (ws) ws.close();
-  if (recorderProcessor) recorderProcessor.disconnect();
-  if (stream) stream.getTracks().forEach(t => t.stop());
-};
+        // The code for our AudioWorkletProcessor. It must be a string to be loaded.
+        const audioProcessorCode = `
+            class ResamplerProcessor extends AudioWorkletProcessor {
+                constructor(options) {
+                    super();
+                    this.sourceSampleRate = options.processorOptions.sourceSampleRate;
+                    this.targetSampleRate = options.processorOptions.targetSampleRate;
+                    this.buffer = null;
+                }
 
-document.getElementById('sendBtn').onclick = () => {
-  const text = document.getElementById('textInput').value.trim();
-  if (!text || !ws) return;
-  logMsg('user', text);
-  ws.send(JSON.stringify({
-    clientContent: { turns: [{ role: 'user', parts: [{ text }] }] },
-    turnComplete: true
-  }));
-  document.getElementById('textInput').value = '';
-};
-</script>
+                // Simple linear interpolation for resampling
+                resample(inputBuffer) {
+                    const inputData = inputBuffer; // Mono channel
+                    const outputLength = Math.floor(inputData.length * this.targetSampleRate / this.sourceSampleRate);
+                    const outputData = new Float32Array(outputLength);
+                    const ratio = inputData.length / outputLength;
+
+                    for (let i = 0; i < outputLength; i++) {
+                        const C1 = i * ratio;
+                        const C2 = Math.floor(C1);
+                        const C3 = Math.ceil(C1);
+                        if (C3 < inputData.length) {
+                            outputData[i] = inputData[C2] + (inputData[C3] - inputData[C2]) * (C1 - C2);
+                        } else {
+                            outputData[i] = inputData[C2];
+                        }
+                    }
+                    return outputData;
+                }
+                
+                // Convert Float32 to Int16 PCM
+                float32ToInt16(buffer) {
+                    let l = buffer.length;
+                    const buf = new Int16Array(l);
+                    while (l--) {
+                        buf[l] = Math.min(1, buffer[l]) * 0x7FFF;
+                    }
+                    return buf.buffer;
+                }
+
+                process(inputs, outputs, parameters) {
+                    const input = inputs;
+                    if (input.length > 0) {
+                        const resampled = this.resample(input);
+                        const pcm16 = this.float32ToInt16(resampled);
+                        this.port.postMessage(pcm16, [pcm16]);
+                    }
+                    return true;
+                }
+            }
+            registerProcessor('resampler-processor', ResamplerProcessor);
+        `;
+
+        async function setupAudioPipeline() {
+            if (!audioContext) {
+                audioContext = new AudioContext();
+            }
+
+            // Request microphone access
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            } catch (error) {
+                console.error("Microphone access denied:", error);
+                updateStatus("Microphone access denied. Please allow microphone access in your browser settings.", true);
+                throw error;
+            }
+            
+            // Create a Blob from the processor code string
+            const processorBlob = new Blob([audioProcessorCode], { type: 'application/javascript' });
+            const processorUrl = URL.createObjectURL(processorBlob);
+
+            // Add the AudioWorklet module
+            await audioContext.addModule(processorUrl);
+
+            // Create the source and the worklet node
+            const source = audioContext.createMediaStreamSource(mediaStream);
+            audioWorkletNode = new AudioWorkletNode(audioContext, 'resampler-processor', {
+                processorOptions: {
+                    sourceSampleRate: audioContext.sampleRate,
+                    targetSampleRate: TARGET_SAMPLE_RATE
+                }
+            });
+
+            // Connect the graph: source -> worklet
+            source.connect(audioWorkletNode);
+
+            // The worklet does not connect to the destination, as we are capturing its output.
+            audioWorkletNode.port.onmessage = (event) => {
+                if (isListening && geminiSession) {
+                    const audioData = new Int16Array(event.data);
+                    const base64Audio = btoa(String.fromCharCode.apply(null, new Uint8Array(audioData.buffer)));
+                    geminiSession.sendRealtimeInput({ audio: { data: base64Audio } });
+                }
+            };
+        }
+
+        // --- MODULE 4: GEMINI LIVE API SESSION AND STREAMING ---
+
+        async function handleMicButtonClick() {
+            if (isListening) {
+                stopListening();
+            } else {
+                await startListening();
+            }
+        }
+
+        async function startListening() {
+            if (!genAI) {
+                updateStatus("API client not initialized. Check your key.", true);
+                return;
+            }
+            if (isProcessing) return;
+
+            isListening = true;
+            document.body.className = 'state-listening';
+            updateStatus("Listening...");
+
+            try {
+                // Ensure audio context is resumed
+                if (audioContext && audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+
+                // Setup audio pipeline if not already done
+                if (!mediaStream) {
+                    await setupAudioPipeline();
+                }
+
+                // Start a new Gemini session if one doesn't exist
+                if (!geminiSession) {
+                    const config = {
+                        systemInstruction: SYSTEM_INSTRUCTION,
+                        responseModalities:,
+                    };
+                    const sessionOptions = {
+                        model: MODEL_NAME,
+                        config: config,
+                        callbacks: {
+                            onmessage: handleGeminiResponse,
+                            onerror: handleGeminiError,
+                            onclose: handleGeminiClose,
+                        }
+                    };
+                    geminiSession = await genAI.live.connect(sessionOptions);
+                }
+            } catch (error) {
+                console.error("Error starting listening session:", error);
+                updateStatus("Error starting session. Check console.", true);
+                stopListening();
+            }
+        }
+
+        function stopListening() {
+            if (isListening) {
+                isListening = false;
+                isProcessing = true;
+                document.body.className = 'state-processing';
+                updateStatus("Processing...");
+                // The API automatically detects end of speech, so we just stop sending.
+            }
+        }
+
+        function handleGeminiResponse(message) {
+            if (message.text) {
+                addChatBubble(message.text, 'ai');
+            }
+            if (message.data) {
+                audioQueue.push(message.data);
+                if (!isPlaying) {
+                    playNextAudioChunk();
+                }
+            }
+            if (message.serverContent && message.serverContent.turnComplete) {
+                isProcessing = false;
+                if (!isListening) {
+                    document.body.className = 'state-idle';
+                    updateStatus("Ready to start");
+                }
+            }
+        }
+
+        function handleGeminiError(error) {
+            console.error("Gemini API Error:", error);
+            updateStatus(`API Error: ${error.message}`, true);
+            isProcessing = false;
+            isListening = false;
+            document.body.className = 'state-error';
+            resetSession();
+        }
+
+        function handleGeminiClose() {
+            console.log("Gemini session closed.");
+            isProcessing = false;
+            isListening = false;
+            document.body.className = 'state-idle';
+            updateStatus("Session closed. Ready to start new one.");
+            resetSession();
+        }
+
+        function resetSession() {
+            if (geminiSession) {
+                geminiSession.close();
+                geminiSession = null;
+            }
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+            if (audioWorkletNode) {
+                audioWorkletNode.disconnect();
+                audioWorkletNode = null;
+            }
+            // Do not close audioContext, it can be reused.
+        }
+
+        // --- MODULE 5: AUDIO RESPONSE PLAYBACK ---
+
+        async function playNextAudioChunk() {
+            if (audioQueue.length === 0) {
+                isPlaying = false;
+                return;
+            }
+            isPlaying = true;
+            
+            const base64Audio = audioQueue.shift();
+            
+            try {
+                // Decode Base64 to ArrayBuffer
+                const binaryString = atob(base64Audio);
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                const audioArrayBuffer = bytes.buffer;
+
+                // The API outputs 16-bit PCM at 24kHz
+                const audioBuffer = await audioContext.decodeAudioData(audioArrayBuffer);
+                
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioContext.destination);
+                source.onended = playNextAudioChunk; // Play next chunk when this one finishes
+                source.start();
+                
+                document.body.className = 'state-speaking';
+                updateStatus("AI is speaking...");
+
+            } catch (error) {
+                console.error("Error playing audio chunk:", error);
+                // If there's an error, try to play the next chunk
+                playNextAudioChunk();
+            }
+        }
+
+        // --- Start the application ---
+        init();
+    </script>
 </body>
 </html>
