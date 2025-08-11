@@ -108,7 +108,7 @@ document.getElementById('connectBtn').onclick = async () => {
   if (!apiKey) return alert('Paste API key first');
 
   // WebSocket endpoint for Gemini Live
-  ws = new WebSocket(`wss://generativelanguage.googleapis.com/v1alpha/live:connect?key=${apiKey}`);
+  ws = new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(apiKey)}`);
   ws.onopen = () => {
     document.getElementById('status').textContent = 'Connected';
     connected = true;
@@ -119,15 +119,15 @@ document.getElementById('connectBtn').onclick = async () => {
     ws.send(JSON.stringify({
       setup: {
         model: "models/gemini-live-2.5-flash-preview",
-        config: {
-          systemInstruction: {
-            parts: [{ text: "You are an English tutor for Indonesian learners. Speak in English first, then give short Indonesian explanations if needed." }]
-          },
-          responseModalities: ["AUDIO", "TEXT"]
-        }
+        generationConfig: { responseModalities: ["AUDIO","TEXT"] },
+        systemInstruction: { parts: [{ text:
+          "You are an English tutor for Indonesian learners. Reply in English first, then brief Indonesian help." }] },
+        // Optional but useful if you want transcripts from the server:
+        inputAudioTranscription: {},
+        outputAudioTranscription: {}
       }
     }));
-    startMic();
+    startMic(); // your function that streams 16 kHz PCM16 chunks via realtimeInput
   };
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
